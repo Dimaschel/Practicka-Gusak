@@ -25,6 +25,18 @@ services:
     volumes:
       - ./parser:/app
     command: python /app/parser.py
+    
+  web:
+    build:
+      context: ./web
+    container_name: web_container
+    depends_on:
+      - database
+    environment:
+      DATABASE_HOST: 'database'
+    ports:
+      - "5000:5000"
+      
 
 volumes:
   pgdata:
