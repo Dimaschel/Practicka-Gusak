@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vacancies</title>
+</head>
+<body>
+    <h1>Search for Vacancies</h1>
+    <form method="post">
+        <input type="text" name="query" placeholder="Enter job title">
+        <input type="submit" value="Search">
+    </form>
+    <h2>Results</h2>
+    <ul>
+    {% for vacancy in vacancies %}
+        <li>
+            <strong>{{ vacancy['name'] }}</strong><br>
+            Salary: {{ vacancy['salary'] if vacancy['salary'] else 'Not specified' }}<br>
+            Requirements: {{ vacancy['snippet']['requirement'] if vacancy['snippet']['requirement'] else 'Not specified' }}
+        </li>
+    {% endfor %}
+    </ul>
+</body>
+</html>
