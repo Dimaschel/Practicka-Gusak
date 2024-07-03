@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:13
+    container_name: postgres_container
+    restart: always
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  parser:
+    build:
+      context: ./parser
+    container_name: parser_container
+    depends_on:
+      - database
+    environment:
+      DATABASE_HOST: 'database'
+    volumes:
+      - ./parser:/app
+    command: python /app/parser.py
+
+volumes:
+  pgdata:
