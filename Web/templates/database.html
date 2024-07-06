@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>База данных вакансий</title>
+</head>
+<body>
+    <h1>База данных вакансий</h1>
+
+    <form action="/database" method="get">
+        <label for="keyword">Ключевое слово:</label>
+        <input type="text" id="keyword" name="keyword">
+        <button type="submit">Применить фильтр</button>
+    </form>
+
+    <form action="/database" method="get">
+        <button type="submit" name="sort" value="asc">Сортировать по возрастанию зарплаты</button>
+        <button type="submit" name="sort" value="desc">Сортировать по убыванию зарплаты</button>
+    </form>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Название</th>
+                <th>Зарплата</th>
+                <th>Требования</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vacancy in vacancies %}
+            <tr>
+                <td>{{ vacancy[1] }}</td>
+                <td>{{ vacancy[2] }}</td>
+                <td>{{ vacancy[3] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
