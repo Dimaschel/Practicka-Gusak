@@ -4,12 +4,18 @@
     <title>Vacancies</title>
 </head>
 <body>
-    <h1>Search for Vacancies</h1>
-    <form method="post">
-        <input type="text" name="query" placeholder="Enter job title">
-        <input type="submit" value="Search">
+    <h1>Поиск вакансий</h1>
+    <form action="/" method="post">
+        <label for="query">Ключевое слово:</label>
+        <input type="text" id="query" name="query" required>
+        <label for="city">Город:</label>
+        <input type="text" id="city" name="city" required>
+        <label for="num_vacancies">Количество вакансий:</label>
+        <input type="number" id="num_vacancies" name="num_vacancies" required>
+        <button type="submit">Поиск вакансий</button>
     </form>
-    <h2>Results</h2>
+    
+    <h2>Вывод</h2>
     <ul>
     {% for vacancy in vacancies %}
         <li>

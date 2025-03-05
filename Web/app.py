@@ -1,5 +1,6 @@
 import os
 import psycopg2
+from psycopg2.pool import SimpleConnectionPool
 from flask import Flask, request, render_template
 from bs4 import BeautifulSoup
 import requests
@@ -7,63 +8,98 @@ import threading
 import time
 import schedule
 
-
 app = Flask(__name__)
 
+# Настройки базы данных
 DATABASE_HOST = os.getenv('DATABASE_HOST', 'database')
-conn_string = f"dbname='postgres' user='postgres' password='postgres' host='{DATABASE_HOST}' port='5432'"
+CONN_STRING = f"dbname='postgres' user='postgres' password='postgres' host='{DATABASE_HOST}' port='5432'"
 
-def get_vacancies(query, city=None, num_vacancies=50):
-    url = 'https://api.hh.ru/vacancies'
-    params = {
-        'text': query,
-        'area': 1, 
-        'per_page': num_vacancies,
-        'area': city if city else 1  
-    }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        return response.json()['items']
-    else:
-        return []
+# Создаем пул соединений (5-20 соединений в пуле)
+pool = SimpleConnectionPool(5, 20, CONN_STRING)
 
+# Класс для работы с базой данных
+class VacancyRepository:
+    @staticmethod
+    def save_vacancy(title, salary_text, requirements):
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO vacancies (title, salary, requirements) VALUES (%s, %s, %s)",
+                (title, salary_text, requirements)
+            )
+            conn.commit()
+        finally:
+            cursor.close()
+            pool.putconn(conn)
 
-def save_vacancy_to_db(vacancy):
-    conn = psycopg2.connect(conn_string)
-    cursor = conn.cursor()
+    @staticmethod
+    def clear_database():
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("TRUNCATE TABLE vacancies")
+            conn.commit()
+        finally:
+            cursor.close()
+            pool.putconn(conn)
+        print("База данных очищена")
+
+    @staticmethod
+    def get_vacancies(keyword=None, sort_order=None):
+        conn = pool.getconn()
+        cursor = conn.cursor()
+        query = "SELECT * FROM vacancies"
+        params = ()
+
+        if keyword:
+            query += " WHERE title ILIKE %s"
+            params = ('%' + keyword + '%',)
+
+        if sort_order == 'asc':
+            query += " ORDER BY salary ASC NULLS LAST"
+        elif sort_order == 'desc':
+            query += " ORDER BY salary DESC NULLS LAST"
+
+        cursor.execute(query, params)
+        vacancies = cursor.fetchall()
+        
+        cursor.close()
+        pool.putconn(conn)
+        return vacancies
+
+# Класс для работы с API hh.ru
+class HHApiClient:
+    BASE_URL = "https://api.hh.ru/vacancies"
+
+    @staticmethod
+    def fetch_vacancies(query, city=None, num_vacancies=50):
+        params = {
+            'text': query,
+            'area': city if city else 1,
+            'per_page': num_vacancies
+        }
+        response = requests.get(HHApiClient.BASE_URL, params=params)
+        return response.json()['items'] if response.status_code == 200 else []
+
+# Функция обработки данных вакансии
+def extract_vacancy_data(vacancy):
     title = vacancy['name']
     salary = vacancy.get('salary', {'from': None, 'to': None})
     snippet = vacancy.get('snippet', {})
     requirements = snippet.get('requirement', 'Требования не указаны')
-    if requirements:
-        requirements = BeautifulSoup(requirements, "html.parser").text
-    else:
-        requirements = 'Требования не указаны'
+    requirements = BeautifulSoup(requirements, "html.parser").text if requirements else 'Требования не указаны'
     salary_text = 'Не указана' if not salary else f"от {salary['from']} до {salary['to']}"
+    return title, salary_text, requirements
 
-    cursor.execute(
-        "INSERT INTO vacancies (title, salary, requirements) VALUES (%s, %s, %s)",
-        (title, salary_text, requirements)
-    )
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-def clear_database():
-    conn = psycopg2.connect(conn_string)
-    cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE vacancies")
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print("бд очищена")
-
+# Функция запуска очистки БД по расписанию
 def run_scheduler():
-    schedule.every(3).hours.do(clear_database)
+    schedule.every(3).hours.do(VacancyRepository.clear_database)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
+# Роут главной страницы
 @app.route('/', methods=['GET', 'POST'])
 def index():
     vacancies = []
@@ -71,40 +107,21 @@ def index():
         query = request.form['query']
         city = request.form['city']
         num_vacancies = request.form.get('num_vacancies', default=50, type=int)
-        vacancies = get_vacancies(query, city, num_vacancies)
+
+        vacancies = HHApiClient.fetch_vacancies(query, city, num_vacancies)
+
         for vacancy in vacancies:
-            save_vacancy_to_db(vacancy)
+            title, salary_text, requirements = extract_vacancy_data(vacancy)
+            VacancyRepository.save_vacancy(title, salary_text, requirements)
+
     return render_template('index.html', vacancies=vacancies)
 
 @app.route('/database', methods=['GET'])
 def database():
     keyword = request.args.get('keyword')
     sort_order = request.args.get('sort')
-
-    conn = psycopg2.connect(conn_string)
-    cursor = conn.cursor()
-
-    query = "SELECT * FROM vacancies"
-
-    if keyword:
-        query += " WHERE title ILIKE %s"
-        params = ('%' + keyword + '%',)
-    else:
-        params = ()
-
-    if sort_order == 'asc':
-        query += " ORDER BY salary ASC NULLS LAST"
-    elif sort_order == 'desc':
-        query += " ORDER BY salary DESC NULLS LAST"
-
-    cursor.execute(query, params)
-    vacancies = cursor.fetchall()
-
-    cursor.close()
-    conn.close()
-
+    vacancies = VacancyRepository.get_vacancies(keyword, sort_order)
     return render_template('database.html', vacancies=vacancies)
-
 
 if __name__ == '__main__':
     scheduler_thread = threading.Thread(target=run_scheduler)
